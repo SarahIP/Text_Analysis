@@ -1,0 +1,291 @@
+---
+title: "Spam or Ham"
+author: "Sara Parizi"
+output:
+  pdf_document:
+    keep_tex: yes
+    fig_caption: yes
+    toc: yes
+    toc_depth: '2'
+    number_sections: yes
+fontsize: 12pt
+latex_engine: pdflatex
+header-includes:
+  \usepackage{helvet}
+  \renewcommand\familydefault{\sfdefault}
+---
+
+\newpage
+
+# Read_in data\
+
+```{r}
+# reading the csv file
+sms_raw = read.csv("sms_spam.csv", header = TRUE)
+```
+
+# Explore the data\
+```{r}
+# exploring the data structure for each column
+str(sms_raw)
+```
+
+## Converting type to factor\
+```{r}
+# converting the class column (type) to factor
+sms_raw$type = factor(sms_raw$type)
+str(sms_raw)
+```
+
+## How many ham and spam\
+```{r}
+table(sms_raw$type)
+```
+
+## Percentage of each type\
+```{r}
+round(prop.table(table(sms_raw$type)) * 100, 1)
+```
+
+# Data Preparation - Cleaning and standardizing text data\
+```{r warning=FALSE}
+# install.packages("tm")
+library(tm)
+library(NLP)
+```
+
+## Create the text corpus\
+```{r}
+# Creating the text corpus
+sms_corpus = VCorpus(VectorSource(sms_raw$text))
+```
+
+### Examine the sms corpus\
+```{r}
+inspect(sms_corpus[1:2])
+```
+
+### To see the actual message\
+```{r}
+# reading the first element of corpus 
+as.character(sms_corpus[[1]])
+```
+
+### To see multiple massages\
+```{r}
+# reading the first three elements of the corpus
+lapply(sms_corpus[1:3], as.character)
+```
+
+## Text Clean-up\
+
+### All lower case characters\
+```{r}
+# transform all the text to lower case
+sms_corpus_clean = tm_map(sms_corpus, content_transformer(tolower))
+# Explore whether the change to lower case has been made
+as.character(sms_corpus[[1]])
+as.character(sms_corpus_clean[[1]])
+```
+
+### remove numbers\
+```{r}
+# remove all the numbers from the text
+sms_corpus_clean = tm_map(sms_corpus_clean, removeNumbers)
+# Explore whether the change of removing numbers has been made
+as.character(sms_corpus[[4]])
+as.character(sms_corpus_clean[[4]])
+```
+
+### remove the stop words\
+```{r}
+# removing the stop words
+sms_corpus_clean = tm_map(sms_corpus_clean, removeWords, stopwords())
+# Explore if the stop words has been removed successfully
+as.character(sms_corpus[[1]])
+as.character(sms_corpus_clean[[1]])
+```
+
+### remove the punctuation\
+```{r}
+# defining a function to remove the punctuation
+replacePunctuation = function(x) {gsub("[[:punct:]]+", " ", x)}
+
+# use the replacePunctuation function to remove the punctuation
+sms_corpus_clean = tm_map(sms_corpus_clean, replacePunctuation)
+# Explore if the punctuation has been removed
+as.character(sms_corpus[[2]])
+as.character(sms_corpus_clean[[2]])
+```
+
+### stemming (reduce words to roots)\
+```{r warning=FALSE}
+# install.packages("SnowballC")
+library(SnowballC)
+# reform the words to their roots
+sms_corpus_clean = tm_map(sms_corpus_clean, stemDocument)
+# check whether the stemming has been worked properly
+as.character(sms_corpus[[50]])
+as.character(sms_corpus_clean[[50]])
+```
+
+### remove additional white space\
+```{r}
+# removing the white spaces
+sms_corpus_clean = tm_map(sms_corpus_clean, stripWhitespace)
+# Examine whether the white spaces has been removed properly
+as.character(sms_corpus[[1]])
+as.character(sms_corpus_clean[[1]])
+```
+
+## Splitting text documents into words (tokenization)\
+```{r}
+# Creating a matrix of words with DocumentTermMatrix
+sms_dtm = DocumentTermMatrix(as.factor(unlist(sms_corpus_clean)))
+sms_dtm$ncol
+sms_dtm$nrow
+# examples
+sms_dtm$dimnames$Terms[1:3]
+# exploring sms_dtm
+sms_dtm
+str(sms_dtm)
+```
+
+# Creating Training and Testing Datasets\
+
+## Creating (75%) training and (25%) testing sets\
+```{r}
+sms_dtm_train = sms_dtm[1:4169,]
+sms_dtm_test = sms_dtm[4170:5559,]
+```
+
+## Creating lables\
+```{r}
+sms_train_lable = sms_raw[1:4169,]$type
+sms_test_lable = sms_raw[4170:5559,]$type
+```
+
+## Proportion in training and testing
+```{r}
+prop.table(table(sms_train_lable))
+prop.table(table(sms_test_lable))
+```
+The proportion of two classes ham ans spam in training is similar to test data set.
+
+# Word cloud - Visualize\
+```{r warning=FALSE}
+# install.packages("wordcloud")
+library(wordcloud)
+wordcloud(unlist(sms_corpus_clean), min.ferq = 50, random.order = FALSE)
+```
+
+## Visualize cloud for spam\
+```{r warning=FALSE}
+spam = subset(sms_raw, type == "spam")
+wordcloud(spam$text, max.words = 50, scale = c(3, 0.5))
+```
+
+## Visualize cloud for ham\
+```{r warning=FALSE}
+ham = subset(sms_raw, type == "ham")
+wordcloud(ham$text, max.words = 50, scale = c(3, 0.5))
+```
+
+# Reduce Dimentionality\
+
+## Finding the most frequent words\
+```{r}
+sms_freq_words = findFreqTerms(sms_dtm_train, 5)
+# The first 10 most frequent words in training set
+sms_freq_words[1:10]
+```
+
+## Creat DTM with the most frequent words\
+```{r}
+sms_dtm_ferq_train = sms_dtm_train[,sms_freq_words]
+sms_dtm_freq_test = sms_dtm_test[,sms_freq_words]
+# Comparing the columns before vs after using frequent words
+sms_dtm_train$ncol
+sms_dtm_ferq_train$ncol
+```
+
+```{r}
+convert_counts = function(x) {
+  x = ifelse(x > 0, "Yes", "No")
+}
+```
+
+
+```{r}
+# applying convert count function to reform the train and test sets
+sms_train = apply(sms_dtm_ferq_train, MARGIN = 2, convert_counts)
+sms_test = apply(sms_dtm_freq_test, MARGIN = 2, convert_counts)
+```
+
+# Train a Model on the train data using Naive bayes algorithm\
+```{r warning=FALSE}
+# install.packages("e1071")
+library(e1071)
+sms_classifier = naiveBayes(sms_train, sms_train_lable)
+```
+
+# Predict and Evaluate the Model Performance\
+```{r}
+sms_test_pred = predict(sms_classifier, sms_test)
+```
+
+## Confusion Matrix
+```{r warning=FALSE}
+library(gmodels)
+
+CrossTable(sms_test_pred, sms_test_lable,
+           prop.chisq = FALSE, prop.t = FALSE, prop.r = FALSE,
+           dnn = c("actual", "predicted"))
+```
+The model missclassified 0.12 of ham text as spam and 0.003 of spam as ham. It seems a good model in overal but we can check the Naive Bayes considering Laplace method to see how it will change.\
+
+
+# Improving the Model Performance by applyiong Laplace\
+```{r}
+sms_classifier2 = naiveBayes(sms_train, sms_train_lable, laplace = 1)
+sms_test_pred2 = predict(sms_classifier2, sms_test)
+
+
+CrossTable(sms_test_pred2, sms_test_lable,
+           prop.chisq = FALSE, prop.t = FALSE, prop.r = FALSE,
+           dnn = c("actual", "predicted"))
+
+```  
+
+
+```{r}
+print("The model without laplace")
+table(sms_test_pred, sms_test_lable)
+print("The model with laplace")
+table(sms_test_pred2, sms_test_lable)
+```
+
+As we can see in the table above, and comparing two confusion matrices, Model 1 without using Laplace method is preferable, since the missed classified labels for spam as ham is increased in the second model.
+
+\center
+**THE END**
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
